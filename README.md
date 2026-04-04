@@ -47,6 +47,8 @@ python3.11 -m venv .venv
 
 The notebook and recommended Colab flow create a local Python 3.11 `.venv` inside the cloned repository, then install and run DubbSystem from that environment. This avoids failures when the Colab notebook kernel is on Python 3.12.
 
+Coqui XTTS also requires license confirmation on first model download. If you have reviewed and accepted the applicable Coqui terms, set `COQUI_TOS_AGREED=1` for the dubbing command in Colab to avoid the interactive prompt.
+
 If Colab does not already provide FFmpeg in your runtime, install it first:
 
 ```bash
@@ -105,6 +107,7 @@ Intermediate timestamped transcript data is written to `.dubb_tmp/<video-stem>/t
 - The default translation model is `facebook/nllb-200-distilled-600M`.
 - The default voice cloning model is Coqui XTTS v2.
 - The full dependency stack is currently supported on Python 3.10 and 3.11, not Python 3.12.
+- XTTS currently needs `transformers` 4.x; `transformers` 5.x is incompatible with Coqui TTS 0.22.0.
 - XTTS voice cloning quality depends strongly on the cleanliness of the reference sample.
 - Alignment is segment-based; if you need word-level forced alignment, extend the transcription stage with WhisperX or another aligner.
 

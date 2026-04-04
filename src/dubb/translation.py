@@ -39,6 +39,8 @@ class Translator:
         self._target_language = target_language
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        if getattr(self._model.generation_config, "max_length", None) is not None:
+            self._model.generation_config.max_length = None
         self._torch_device = "cuda" if device == "cuda" and torch.cuda.is_available() else "cpu"
         self._model.to(self._torch_device)
 
