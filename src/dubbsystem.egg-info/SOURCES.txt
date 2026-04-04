@@ -1,5 +1,6 @@
 README.md
 pyproject.toml
+setup.py
 src/dubb/__init__.py
 src/dubb/cli.py
 src/dubb/media.py
