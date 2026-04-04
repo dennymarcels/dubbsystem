@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import soundfile as sf
 import torch
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,36 @@ def configure_torch_checkpoint_loading() -> None:
     logger.info("Enabled torch checkpoint compatibility mode for XTTS")
 
 
+def configure_torchaudio_load_fallback() -> None:
+    """Patch torchaudio.load to use soundfile when TorchCodec is unavailable."""
+    import torchaudio
+
+    if getattr(torchaudio.load, "_dubb_xtts_compat", False):
+        return
+
+    original_torchaudio_load = torchaudio.load
+
+    def patched_torchaudio_load(uri: str | os.PathLike[str], *args: Any, **kwargs: Any) -> tuple[torch.Tensor, int]:
+        """Load audio with torchaudio when possible, otherwise fall back to soundfile."""
+        try:
+            return original_torchaudio_load(uri, *args, **kwargs)
+        except ImportError as exc:
+            if "torchcodec" not in str(exc).lower():
+                raise
+
+            audio_array, sample_rate = sf.read(str(uri), always_2d=True, dtype="float32")
+            audio_tensor = torch.from_numpy(np.ascontiguousarray(audio_array.T))
+            logger.warning(
+                "TorchCodec is unavailable; falling back to soundfile for audio loading: %s",
+                uri,
+            )
+            return audio_tensor, int(sample_rate)
+
+    patched_torchaudio_load._dubb_xtts_compat = True  # type: ignore[attr-defined]
+    torchaudio.load = patched_torchaudio_load  # type: ignore[assignment]
+    logger.info("Enabled torchaudio TorchCodec compatibility fallback")
+
+
 class VoiceCloner:
     """Synthesize speech using a voice reference sample."""
 
@@ -56,6 +88,7 @@ class VoiceCloner:
         """Load the TTS model onto the configured device."""
         configure_matplotlib_backend()
         configure_torch_checkpoint_loading()
+        configure_torchaudio_load_fallback()
         from TTS.api import TTS
 
         runtime_device = "cuda" if device == "cuda" and torch.cuda.is_available() else "cpu"
