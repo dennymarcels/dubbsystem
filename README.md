@@ -38,10 +38,14 @@ If your local machine defaults to Python 3.12, create a Python 3.10 or 3.11 envi
 ```bash
 git clone <your-repository-url>
 cd DubbSystem
-pip install .
+apt-get update
+apt-get install -y ffmpeg python3.11 python3.11-venv
+python3.11 -m venv .venv
+./.venv/bin/python -m pip install --upgrade pip setuptools wheel
+./.venv/bin/python -m pip install -e .
 ```
 
-The intended Colab target is a Python 3.10 or 3.11 runtime with GPU enabled.
+The notebook and recommended Colab flow create a local Python 3.11 `.venv` inside the cloned repository, then install and run DubbSystem from that environment. This avoids failures when the Colab notebook kernel is on Python 3.12.
 
 If Colab does not already provide FFmpeg in your runtime, install it first:
 
@@ -80,7 +84,7 @@ Important progress messages include input validation, audio extraction, speaker 
 
 ## Colab Notebook
 
-A Colab-ready notebook is included at `notebooks/colab_dubb_demo.ipynb`. It installs FFmpeg, clones the repository, installs the package, lets you upload an MP4, runs the `dubb` CLI, and previews the dubbed result.
+A Colab-ready notebook is included at `notebooks/colab_dubb_demo.ipynb`. It installs FFmpeg, creates a Python 3.11 `.venv` when needed, clones the repository, installs the package, lets you upload an MP4, runs the `dubb` CLI from that environment, and previews the dubbed result.
 
 ## Pipeline
 
