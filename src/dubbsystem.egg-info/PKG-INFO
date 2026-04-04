@@ -1,0 +1,116 @@
+Metadata-Version: 2.4
+Name: dubbsystem
+Version: 0.1.0
+Summary: GPU-oriented open source video dubbing pipeline with transcription, translation, voice cloning, and muxing.
+Author: DubbSystem
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: ffmpeg-python>=0.2.0
+Requires-Dist: faster-whisper>=1.1.1
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: pydantic>=2.7.0
+Requires-Dist: pydub>=0.25.1
+Requires-Dist: soundfile>=0.12.1
+Requires-Dist: librosa>=0.10.2.post1
+Requires-Dist: torch>=2.3.0
+Requires-Dist: torchaudio>=2.3.0
+Requires-Dist: transformers>=4.44.0
+Requires-Dist: sentencepiece>=0.2.0
+Requires-Dist: sacremoses>=0.1.1
+Requires-Dist: TTS>=0.22.0
+Requires-Dist: typer>=0.12.3
+Requires-Dist: rich>=13.7.1
+Provides-Extra: dev
+Requires-Dist: pytest>=8.2.0; extra == "dev"
+Requires-Dist: pytest-mock>=3.14.0; extra == "dev"
+
+# DubbSystem
+
+DubbSystem is a Python package for GPU-oriented video dubbing with open source models. It accepts an MP4 video, extracts audio, transcribes it with timestamps, translates the speech to a target language, clones the original speaker voice from a sample, synthesizes dubbed speech, aligns each segment to the source timing, and muxes the result back into an MP4.
+
+## Features
+
+- MP4 input and MP4 output.
+- FFmpeg-based audio extraction and video muxing.
+- Timestamped transcription with Faster Whisper.
+- Translation with Hugging Face sequence-to-sequence models.
+- Voice cloning with Coqui XTTS v2.
+- Segment-level duration fitting to keep the dubbed track chronologically aligned.
+- Installable with `git clone` then `pip install .`.
+- CLI entrypoint through `dubb`.
+
+## Installation
+
+### System requirements
+
+- Python 3.11+
+- FFmpeg available on `PATH`
+- CUDA-capable GPU recommended for transcription, translation, and synthesis
+
+### Local install
+
+```bash
+git clone <your-repository-url>
+cd DubbSystem
+pip install .
+```
+
+### Google Colab
+
+```bash
+git clone <your-repository-url>
+cd DubbSystem
+pip install .
+```
+
+If Colab does not already provide FFmpeg in your runtime, install it first:
+
+```bash
+apt-get update
+apt-get install -y ffmpeg
+```
+
+## Usage
+
+Default output naming writes the dubbed MP4 next to the source file with an `_dubbed` suffix.
+
+```bash
+dubb /path/to/input.mp4
+```
+
+Custom output path:
+
+```bash
+dubb /path/to/input.mp4 /path/to/output.mp4
+```
+
+Optional target language override:
+
+```bash
+dubb /path/to/input.mp4 /path/to/output.mp4 --target-language it
+```
+
+## Pipeline
+
+1. Extract source audio as mono 24 kHz WAV.
+2. Create a speaker reference sample from the extracted audio.
+3. Transcribe the speech with timestamps.
+4. Translate text segment by segment.
+5. Synthesize translated segments with the cloned voice.
+6. Time-fit each segment to the original window.
+7. Overlay segments into a single dubbed track.
+8. Replace the source audio in the video and export MP4.
+
+## Notes
+
+- The default translation model targets English.
+- XTTS voice cloning quality depends strongly on the cleanliness of the reference sample.
+- Alignment is segment-based; if you need word-level forced alignment, extend the transcription stage with WhisperX or another aligner.
+
+## Development
+
+```bash
+pip install -e .[dev]
+pytest
+```
