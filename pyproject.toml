@@ -7,7 +7,7 @@ name = "dubbsystem"
 version = "0.1.0"
 description = "GPU-oriented open source video dubbing pipeline with transcription, translation, voice cloning, and muxing."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10,<3.12"
 license = { text = "MIT" }
 authors = [
   { name = "DubbSystem" }

@@ -17,9 +17,11 @@ DubbSystem is a Python package for GPU-oriented video dubbing with open source m
 
 ### System requirements
 
-- Python 3.11+
+- Python 3.10 or 3.11
 - FFmpeg available on `PATH`
 - CUDA-capable GPU recommended for transcription, translation, and synthesis
+
+Python 3.12 is not currently supported because the Coqui `TTS` dependency used for XTTS voice cloning does not publish compatible distributions for that interpreter line.
 
 ### Local install
 
@@ -29,6 +31,8 @@ cd DubbSystem
 pip install .
 ```
 
+If your local machine defaults to Python 3.12, create a Python 3.10 or 3.11 environment first.
+
 ### Google Colab
 
 ```bash
@@ -36,6 +40,8 @@ git clone <your-repository-url>
 cd DubbSystem
 pip install .
 ```
+
+The intended Colab target is a Python 3.10 or 3.11 runtime with GPU enabled.
 
 If Colab does not already provide FFmpeg in your runtime, install it first:
 
@@ -94,6 +100,7 @@ Intermediate timestamped transcript data is written to `.dubb_tmp/<video-stem>/t
 - The default transcription model is Faster Whisper `medium`.
 - The default translation model is `facebook/nllb-200-distilled-600M`.
 - The default voice cloning model is Coqui XTTS v2.
+- The full dependency stack is currently supported on Python 3.10 and 3.11, not Python 3.12.
 - XTTS voice cloning quality depends strongly on the cleanliness of the reference sample.
 - Alignment is segment-based; if you need word-level forced alignment, extend the transcription stage with WhisperX or another aligner.
 
