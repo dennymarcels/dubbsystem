@@ -23,6 +23,20 @@ class Segment(BaseModel):
         return max(0.0, self.end - self.start)
 
 
+class SynthesisChunk(BaseModel):
+    """A merged translated unit used for speech synthesis pacing."""
+
+    start: float
+    end: float
+    translated_text: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def duration(self) -> float:
+        """Return the duration of the synthesis chunk in seconds."""
+        return max(0.0, self.end - self.start)
+
+
 class DubbingConfig(BaseModel):
     """Runtime configuration for dubbing."""
 
@@ -37,6 +51,10 @@ class DubbingConfig(BaseModel):
     sample_rate: int = Field(default=24_000)
     voice_sample_seconds: int = Field(default=20)
     temp_dir_name: str = Field(default=".dubb_tmp")
+    merge_gap_threshold: float = Field(default=0.35)
+    max_chunk_duration: float = Field(default=12.0)
+    min_tempo_factor: float = Field(default=0.9)
+    max_tempo_factor: float = Field(default=1.15)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

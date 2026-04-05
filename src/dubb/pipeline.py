@@ -7,7 +7,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from dubb.schemas import DubbingConfig, Segment
+from dubb.schemas import DubbingConfig, Segment, SynthesisChunk
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +82,10 @@ class DubbingPipeline:
 
         logger.info("Loading voice cloning model %s", self._config.tts_model)
         cloner = VoiceCloner(model_name=self._config.tts_model, device=self._config.device)
-        synthesized_segments = self._synthesize_segments(translated_segments, speaker_sample, cloner, work_dir)
-        logger.info("Synthesized %s aligned speech segments", len(synthesized_segments))
+        synthesis_chunks = self._build_synthesis_chunks(translated_segments)
+        logger.info("Merged %s transcript segments into %s synthesis chunks", len(translated_segments), len(synthesis_chunks))
+        synthesized_segments = self._synthesize_segments(synthesis_chunks, speaker_sample, cloner, work_dir)
+        logger.info("Synthesized %s aligned speech chunks", len(synthesized_segments))
 
         video_duration = float(ffmpeg.probe(str(self._config.input_path))["format"]["duration"])
         logger.info("Compositing dubbed audio track for %.2f seconds of video", video_duration)
@@ -112,41 +114,82 @@ class DubbingPipeline:
 
     def _synthesize_segments(
         self,
-        segments: list[Segment],
+        chunks: list[SynthesisChunk],
         speaker_sample: Path,
         cloner: VoiceCloner,
         work_dir: Path,
     ) -> list[tuple[Path, float]]:
-        """Synthesize and duration-fit translated segments."""
-        from dubb.media import fit_audio_to_duration
+        """Synthesize and duration-fit merged translated chunks."""
+        from dubb.media import normalize_audio_timing
 
         aligned_segments: list[tuple[Path, float]] = []
-        for index, segment in enumerate(segments):
-            if not segment.translated_text:
-                logger.warning("Skipping empty translated segment at index %s", index)
+        for index, chunk in enumerate(chunks):
+            if not chunk.translated_text.strip():
+                logger.warning("Skipping empty synthesis chunk at index %s", index)
                 continue
             raw_segment_path = work_dir / "segments" / f"segment_{index:04d}_raw.wav"
             aligned_segment_path = work_dir / "segments" / f"segment_{index:04d}.wav"
             logger.info(
-                "Synthesizing segment %s/%s at %.2fs for %.2fs",
+                "Synthesizing chunk %s/%s at %.2fs for %.2fs",
                 index + 1,
-                len(segments),
-                segment.start,
-                segment.duration,
+                len(chunks),
+                chunk.start,
+                chunk.duration,
             )
             cloner.synthesize(
-                text=segment.translated_text,
+                text=chunk.translated_text,
                 speaker_sample=speaker_sample,
                 language=self._config.target_language,
                 output_path=raw_segment_path,
             )
-            fit_audio_to_duration(
+            normalize_audio_timing(
                 source_audio=raw_segment_path,
                 output_audio=aligned_segment_path,
-                target_duration=max(segment.duration, 0.25),
+                target_duration=max(chunk.duration, 0.25),
+                min_tempo_factor=self._config.min_tempo_factor,
+                max_tempo_factor=self._config.max_tempo_factor,
             )
-            aligned_segments.append((aligned_segment_path, segment.start))
+            aligned_segments.append((aligned_segment_path, chunk.start))
         return aligned_segments
+
+    def _build_synthesis_chunks(self, segments: list[Segment]) -> list[SynthesisChunk]:
+        """Merge nearby translated segments into larger chunks with smoother pacing."""
+        chunks: list[SynthesisChunk] = []
+        current_segments: list[Segment] = []
+
+        for segment in segments:
+            if not segment.translated_text:
+                continue
+
+            if not current_segments:
+                current_segments.append(segment)
+                continue
+
+            previous_segment = current_segments[-1]
+            gap = max(0.0, segment.start - previous_segment.end)
+            merged_duration = segment.end - current_segments[0].start
+            should_merge = gap <= self._config.merge_gap_threshold and merged_duration <= self._config.max_chunk_duration
+
+            if should_merge:
+                current_segments.append(segment)
+                continue
+
+            chunks.append(self._segments_to_chunk(current_segments))
+            current_segments = [segment]
+
+        if current_segments:
+            chunks.append(self._segments_to_chunk(current_segments))
+
+        return chunks
+
+    def _segments_to_chunk(self, segments: list[Segment]) -> SynthesisChunk:
+        """Convert a group of nearby translated segments into a single synthesis chunk."""
+        translated_text = " ".join(segment.translated_text.strip() for segment in segments if segment.translated_text)
+        return SynthesisChunk(
+            start=segments[0].start,
+            end=segments[-1].end,
+            translated_text=translated_text,
+        )
 
     def cleanup(self) -> None:
         """Remove intermediate artifacts for the current input file."""
