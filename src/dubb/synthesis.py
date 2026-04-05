@@ -14,6 +14,22 @@ import torch
 logger = logging.getLogger(__name__)
 
 
+def normalize_xtts_language(language_code: str) -> str:
+    """Map user-facing locale codes to XTTS language identifiers."""
+    normalized_language = language_code.strip().lower()
+    aliases = {
+        "en-us": "en",
+        "en_us": "en",
+        "en-gb": "en",
+        "en_gb": "en",
+        "pt-br": "pt",
+        "pt_br": "pt",
+        "zh-cn": "zh-cn",
+        "zh_cn": "zh-cn",
+    }
+    return aliases.get(normalized_language, normalized_language)
+
+
 def configure_matplotlib_backend() -> None:
     """Force a safe matplotlib backend before importing Coqui TTS."""
     current_backend = os.environ.get("MPLBACKEND")
@@ -100,7 +116,7 @@ class VoiceCloner:
         self._tts.tts_to_file(
             text=text,
             speaker_wav=str(speaker_sample),
-            language=language,
+            language=normalize_xtts_language(language),
             file_path=str(output_path),
         )
         return output_path

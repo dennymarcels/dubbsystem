@@ -42,9 +42,9 @@ class DubbingConfig(BaseModel):
 
     input_path: Path
     output_path: Path | None = None
-    target_language: str = Field(default="en")
+    target_language: str = Field(default="en-us")
     transcription_model: str = Field(default="large-v3")
-    translation_model: str = Field(default="facebook/nllb-200-1.3B")
+    translation_model: str = Field(default="facebook/nllb-200-3.3B")
     tts_model: str = Field(default="tts_models/multilingual/multi-dataset/xtts_v2")
     device: Literal["cpu", "cuda"] = Field(default="cuda")
     compute_type: str = Field(default="float16")

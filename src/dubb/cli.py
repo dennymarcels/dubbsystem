@@ -28,9 +28,9 @@ def configure_logging(log_level: str) -> None:
 def dubb(
     input_path: Path = typer.Argument(..., exists=True, readable=True, help="Path to the input MP4 video."),
     output_path: Path | None = typer.Argument(None, help="Optional output MP4 path."),
-    target_language: str = typer.Option("en", "--target-language", help="Target dubbing language code."),
+    target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code, for example en-us, en, it, pt, or fr."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
-    translation_model: str = typer.Option("facebook/nllb-200-1.3B", "--translation-model", help="Hugging Face translation model name."),
+    translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
     voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     keep_temp: bool = typer.Option(False, "--keep-temp", help="Keep intermediate working files."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),

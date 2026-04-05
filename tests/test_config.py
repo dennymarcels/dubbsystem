@@ -20,3 +20,9 @@ def test_explicit_output_path_is_preserved() -> None:
         output_path=Path("/tmp/custom.mp4"),
     )
     assert config.resolved_output_path == Path("/tmp/custom.mp4")
+
+
+def test_default_target_language_uses_american_english() -> None:
+    """Ensure the default target language is American English."""
+    config = DubbingConfig(input_path=Path("/tmp/example.mp4"))
+    assert config.target_language == "en-us"
