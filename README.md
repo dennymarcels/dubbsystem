@@ -76,6 +76,15 @@ Optional target language override:
 dubb /path/to/input.mp4 /path/to/output.mp4 --target-language it
 ```
 
+Override model choices explicitly:
+
+```bash
+dubb /path/to/input.mp4 /path/to/output.mp4 \
+	--transcription-model large-v3 \
+	--translation-model facebook/nllb-200-1.3B \
+	--voice-sample-seconds 30
+```
+
 Verbose pipeline logging:
 
 ```bash
@@ -103,9 +112,10 @@ Intermediate timestamped transcript data is written to `.dubb_tmp/<video-stem>/t
 
 ## Notes
 
-- The default transcription model is Faster Whisper `medium`.
-- The default translation model is `facebook/nllb-200-distilled-600M`.
+- The default transcription model is Faster Whisper `large-v3`.
+- The default translation model is `facebook/nllb-200-1.3B`.
 - The default voice cloning model is Coqui XTTS v2.
+- The default speaker reference sample length is 30 seconds.
 - The full dependency stack is currently supported on Python 3.10 and 3.11, not Python 3.12.
 - XTTS currently needs an older `transformers` 4.x release; this project pins `transformers` to the 4.41 line because newer 4.x and 5.x releases break Coqui TTS 0.22.0 imports.
 - XTTS voice cloning quality depends strongly on the cleanliness of the reference sample.

@@ -43,13 +43,13 @@ class DubbingConfig(BaseModel):
     input_path: Path
     output_path: Path | None = None
     target_language: str = Field(default="en")
-    transcription_model: str = Field(default="medium")
-    translation_model: str = Field(default="facebook/nllb-200-distilled-600M")
+    transcription_model: str = Field(default="large-v3")
+    translation_model: str = Field(default="facebook/nllb-200-1.3B")
     tts_model: str = Field(default="tts_models/multilingual/multi-dataset/xtts_v2")
     device: Literal["cpu", "cuda"] = Field(default="cuda")
     compute_type: str = Field(default="float16")
     sample_rate: int = Field(default=24_000)
-    voice_sample_seconds: int = Field(default=20)
+    voice_sample_seconds: int = Field(default=30)
     temp_dir_name: str = Field(default=".dubb_tmp")
     merge_gap_threshold: float = Field(default=0.35)
     max_chunk_duration: float = Field(default=12.0)
