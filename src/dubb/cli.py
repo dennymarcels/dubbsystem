@@ -92,7 +92,7 @@ def dubb(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code, for example en-us, en, it, pt, or fr."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     keep_temp: bool = typer.Option(False, "--keep-temp", help="Keep intermediate working files."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
@@ -129,7 +129,7 @@ def extract_audio_step(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
     """Extract the source audio artifact for inspection."""
@@ -145,12 +145,13 @@ def create_speaker_sample_step(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
     """Create the speaker sample artifact from the extracted audio."""
     pipeline = build_pipeline(input_path, output_path, target_language, transcription_model, translation_model, voice_sample_seconds, log_level)
     source_audio = require_artifact(pipeline.source_audio_path(), "Source audio artifact")
+    require_artifact(pipeline.transcript_source_path(), "Transcript artifact")
     speaker_sample = pipeline.create_speaker_sample(source_audio)
     console.print(f"Speaker sample written to: {speaker_sample}")
 
@@ -162,7 +163,7 @@ def transcribe_step(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
     """Transcribe the extracted source audio and persist transcript artifacts."""
@@ -179,7 +180,7 @@ def translate_step(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
     """Translate the raw transcript and persist translated transcript artifacts."""
@@ -196,7 +197,7 @@ def prepare_synthesis_chunks_step(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
     """Create the merged synthesis chunk artifact from translated transcript segments."""
@@ -213,7 +214,7 @@ def synthesize_step(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
     """Generate aligned synthesized chunk audio and persist the synthesis manifest."""
@@ -231,7 +232,7 @@ def compose_audio_step(
     target_language: str = typer.Option("en-us", "--target-language", help="Target dubbing language code."),
     transcription_model: str = typer.Option("large-v3", "--transcription-model", help="Faster Whisper model name."),
     translation_model: str = typer.Option("facebook/nllb-200-3.3B", "--translation-model", help="Hugging Face translation model name."),
-    voice_sample_seconds: int = typer.Option(30, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
+    voice_sample_seconds: int = typer.Option(60, "--voice-sample-seconds", min=5, help="Length of source audio used for voice cloning."),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging verbosity: DEBUG, INFO, WARNING, ERROR."),
 ) -> None:
     """Overlay aligned segment audio into the final dubbed track artifact."""

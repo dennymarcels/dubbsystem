@@ -49,7 +49,7 @@ class DubbingConfig(BaseModel):
     device: Literal["cpu", "cuda"] = Field(default="cuda")
     compute_type: str = Field(default="float16")
     sample_rate: int = Field(default=24_000)
-    voice_sample_seconds: int = Field(default=30)
+    voice_sample_seconds: int = Field(default=60)
     temp_dir_name: str = Field(default=".dubb_tmp")
     merge_gap_threshold: float = Field(default=0.35)
     max_chunk_duration: float = Field(default=12.0)

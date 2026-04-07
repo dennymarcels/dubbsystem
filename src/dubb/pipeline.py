@@ -26,8 +26,8 @@ class DubbingPipeline:
         """Execute the dubbing pipeline and return the output video path."""
         self.prepare_workspace()
         source_audio = self.extract_source_audio()
-        speaker_sample = self.create_speaker_sample(source_audio)
         transcript = self.transcribe_source_audio(source_audio)
+        speaker_sample = self.create_speaker_sample(source_audio, transcript.segments)
         translated_segments = self.translate_segments(transcript.segments, transcript.source_language)
         synthesis_chunks = self.prepare_synthesis_chunks(translated_segments)
         synthesized_segments = self.synthesize_chunks(synthesis_chunks, speaker_sample)
@@ -50,6 +50,10 @@ class DubbingPipeline:
     def speaker_sample_path(self) -> Path:
         """Return the speaker sample artifact path."""
         return self._config.temp_dir / "speaker_sample.wav"
+
+    def speaker_sample_selection_path(self) -> Path:
+        """Return the speaker sample selection metadata artifact path."""
+        return self._config.temp_dir / "speaker_sample.selection.json"
 
     def transcript_source_path(self) -> Path:
         """Return the raw transcript artifact path."""
@@ -89,17 +93,34 @@ class DubbingPipeline:
         logger.info("Source audio extracted to %s", source_audio)
         return source_audio
 
-    def create_speaker_sample(self, source_audio: Path) -> Path:
+    def create_speaker_sample(self, source_audio: Path, transcript_segments: list[Segment] | None = None) -> Path:
         """Create and persist the speaker reference sample used for cloning."""
         from dubb.media import create_voice_sample
 
         work_dir = self.prepare_workspace()
         logger.info("Creating speaker reference sample (%s seconds)", self._config.voice_sample_seconds)
-        speaker_sample = create_voice_sample(
+        if transcript_segments is None and self.transcript_source_path().exists():
+            transcript_segments, _ = self.load_source_transcript()
+        sample_result = create_voice_sample(
             source_audio=source_audio,
             output_sample=work_dir / "speaker_sample.wav",
             duration_seconds=self._config.voice_sample_seconds,
+            segments=transcript_segments,
         )
+        self._write_json_artifact(
+            self.speaker_sample_selection_path(),
+            {
+                "target_duration_seconds": self._config.voice_sample_seconds,
+                "cleanup": [
+                    "high-pass-filter-80hz",
+                    "trim-silence",
+                    "compress-dynamic-range",
+                    "normalize",
+                ],
+                "selected_segments": sample_result.selection,
+            },
+        )
+        speaker_sample = sample_result.output_path
         logger.info("Speaker reference sample saved to %s", speaker_sample)
         return speaker_sample
 

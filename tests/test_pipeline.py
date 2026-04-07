@@ -72,8 +72,9 @@ def test_run_executes_pipeline_steps_in_sequence(tmp_path: Path) -> None:
             self.calls.append("extract_source_audio")
             return self._config.temp_dir / "source.wav"
 
-        def create_speaker_sample(self, source_audio: Path) -> Path:
-            self.calls.append(f"create_speaker_sample:{source_audio.name}")
+        def create_speaker_sample(self, source_audio: Path, transcript_segments=None) -> Path:
+            transcript_size = len(transcript_segments or [])
+            self.calls.append(f"create_speaker_sample:{source_audio.name}:{transcript_size}")
             return self._config.temp_dir / "speaker_sample.wav"
 
         def transcribe_source_audio(self, source_audio: Path):
@@ -113,8 +114,8 @@ def test_run_executes_pipeline_steps_in_sequence(tmp_path: Path) -> None:
     assert pipeline.calls == [
         "prepare_workspace",
         "extract_source_audio",
-        "create_speaker_sample:source.wav",
         "transcribe_source_audio:source.wav",
+        "create_speaker_sample:source.wav:0",
         "translate_segments:es",
         "prepare_synthesis_chunks",
         "synthesize_chunks:speaker_sample.wav",

@@ -82,7 +82,7 @@ Override model choices explicitly:
 dubb /path/to/input.mp4 /path/to/output.mp4 \
 	--transcription-model large-v3 \
 	--translation-model facebook/nllb-200-3.3B \
-	--voice-sample-seconds 30
+	--voice-sample-seconds 60
 ```
 
 Verbose pipeline logging:
@@ -95,8 +95,8 @@ Step-by-step execution is also available from the CLI. Each command writes artif
 
 ```bash
 dubb extract-audio /path/to/input.mp4 /path/to/output.mp4
-dubb create-speaker-sample /path/to/input.mp4 /path/to/output.mp4
 dubb transcribe /path/to/input.mp4 /path/to/output.mp4
+dubb create-speaker-sample /path/to/input.mp4 /path/to/output.mp4
 dubb translate /path/to/input.mp4 /path/to/output.mp4
 dubb prepare-synthesis-chunks /path/to/input.mp4 /path/to/output.mp4
 dubb synthesize /path/to/input.mp4 /path/to/output.mp4
@@ -115,8 +115,8 @@ The notebook also includes a staged workflow where each pipeline phase runs sepa
 ## Pipeline
 
 1. Extract source audio as mono 24 kHz WAV.
-2. Create a speaker reference sample from the extracted audio.
-3. Transcribe the speech with timestamps.
+2. Transcribe the speech with timestamps.
+3. Build a cleaned 60-second speaker reference sample from the best transcript-ranked speech segments.
 4. Translate text segment by segment.
 5. Synthesize translated segments with the cloned voice.
 6. Time-fit each segment to the original window.
@@ -129,6 +129,7 @@ The step-by-step workflow writes these additional artifacts into `.dubb_tmp/<vid
 
 - `source.wav`
 - `speaker_sample.wav`
+- `speaker_sample.selection.json`
 - `transcript.source.json`
 - `transcript.translated.json`
 - `synthesis_chunks.json`
@@ -143,11 +144,11 @@ The step-by-step workflow writes these additional artifacts into `.dubb_tmp/<vid
 - The default transcription model is Faster Whisper `large-v3`.
 - The default translation model is `facebook/nllb-200-3.3B`.
 - The default voice cloning model is Coqui XTTS v2.
-- The default speaker reference sample length is 30 seconds.
+- The default speaker reference sample length is 60 seconds.
 - The full dependency stack is currently supported on Python 3.10 and 3.11, not Python 3.12.
 - Locale aliases such as `en-us` are normalized for both translation and XTTS synthesis. For English dubbing, the pipeline also applies a light American spelling normalization pass.
 - XTTS currently needs an older `transformers` 4.x release; this project pins `transformers` to the 4.41 line because newer 4.x and 5.x releases break Coqui TTS 0.22.0 imports.
-- XTTS voice cloning quality depends strongly on the cleanliness of the reference sample.
+- XTTS voice cloning quality depends strongly on the cleanliness of the reference sample. The pipeline now builds a cleaned reference from the best transcript-ranked speech regions instead of taking the first window of the video audio.
 - Alignment is segment-based; if you need word-level forced alignment, extend the transcription stage with WhisperX or another aligner.
 
 ## Development
