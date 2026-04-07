@@ -218,7 +218,7 @@ def normalize_audio_timing(
     min_tempo_factor: float,
     max_tempo_factor: float,
 ) -> Path:
-    """Adjust clip pacing within bounded tempo limits, then trim or pad to the target duration."""
+    """Adjust clip pacing within bounded tempo limits, then pad short clips without truncating speech."""
     if target_duration <= 0:
         raise ValueError("target_duration must be greater than zero")
     if min_tempo_factor <= 0 or max_tempo_factor <= 0:
@@ -253,9 +253,7 @@ def normalize_audio_timing(
 
     clip = AudioSegment.from_file(tempo_adjusted_audio)
     target_duration_ms = int(target_duration * 1000)
-    if len(clip) > target_duration_ms:
-        clip = clip[:target_duration_ms]
-    elif len(clip) < target_duration_ms:
+    if len(clip) < target_duration_ms:
         clip += AudioSegment.silent(duration=target_duration_ms - len(clip))
     clip.export(output_audio, format="wav")
     tempo_adjusted_audio.unlink(missing_ok=True)

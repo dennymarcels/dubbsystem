@@ -119,7 +119,7 @@ The notebook also includes a staged workflow where each pipeline phase runs sepa
 3. Build a cleaned 60-second speaker reference sample from the best transcript-ranked speech segments.
 4. Translate text segment by segment.
 5. Synthesize translated segments with the cloned voice.
-6. Time-fit each segment to the original window.
+6. Time-fit each segment to the original window without truncating spoken text when a chunk needs more time.
 7. Overlay segments into a single dubbed track.
 8. Replace the source audio in the video and export MP4.
 
@@ -137,6 +137,8 @@ The step-by-step workflow writes these additional artifacts into `.dubb_tmp/<vid
 - `segments/segment_*_raw.wav`
 - `segments/segment_*.wav`
 - `dubbed_track.wav`
+
+When a translated chunk still needs more time after bounded tempo normalization, the pipeline preserves the full spoken chunk instead of cutting it short. The synthesis manifest records both target and actual durations so you can inspect overflows.
 
 ## Notes
 

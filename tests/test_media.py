@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import ffmpeg
 from pydub import AudioSegment
 from pydub.generators import Sine
 
-from dubb.media import create_voice_sample
+from dubb.media import create_voice_sample, normalize_audio_timing
 from dubb.schemas import Segment
 
 
@@ -40,3 +41,22 @@ def test_create_voice_sample_prefers_ranked_segments(tmp_path: Path) -> None:
     assert result.selection
     assert all(item["strategy"] == "transcript-ranked" for item in result.selection)
     assert all(item["start_ms"] >= 2_000 for item in result.selection)
+
+
+def test_normalize_audio_timing_preserves_full_speech_when_clip_is_longer(tmp_path: Path) -> None:
+    """Ensure timing normalization does not cut off synthesized speech when it exceeds the target window."""
+    source_audio = tmp_path / "long.wav"
+    output_audio = tmp_path / "aligned.wav"
+
+    Sine(440).to_audio_segment(duration=2_000).export(source_audio, format="wav")
+
+    normalize_audio_timing(
+        source_audio=source_audio,
+        output_audio=output_audio,
+        target_duration=1.0,
+        min_tempo_factor=0.9,
+        max_tempo_factor=1.15,
+    )
+
+    output_duration = float(ffmpeg.probe(str(output_audio))["format"]["duration"])
+    assert output_duration > 1.0

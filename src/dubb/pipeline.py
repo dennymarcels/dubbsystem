@@ -281,13 +281,16 @@ class DubbingPipeline:
                 min_tempo_factor=self._config.min_tempo_factor,
                 max_tempo_factor=self._config.max_tempo_factor,
             )
+            aligned_duration = float(ffmpeg.probe(str(aligned_segment_path))["format"]["duration"])
             aligned_segments.append((aligned_segment_path, chunk.start))
             manifest_entries.append(
                 {
                     "index": index,
                     "start": chunk.start,
                     "end": chunk.end,
-                    "duration": chunk.duration,
+                    "target_duration": chunk.duration,
+                    "actual_duration": aligned_duration,
+                    "overflow_duration": max(0.0, aligned_duration - chunk.duration),
                     "translated_text": chunk.translated_text,
                     "raw_audio": str(raw_segment_path),
                     "aligned_audio": str(aligned_segment_path),
