@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import ffmpeg
+import numpy as np
 from pydub import AudioSegment, effects, silence
 
 from dubb.schemas import Segment
@@ -115,7 +116,8 @@ def _select_voice_sample_segments(
             continue
 
         clip = audio[start_ms:end_ms]
-        score = _score_voice_sample_clip(clip, segment.text)
+        acoustic_features = _extract_clip_features(clip)
+        score = _score_voice_sample_clip(clip, segment.text, acoustic_features)
         candidates.append(
             {
                 "start_ms": start_ms,
@@ -123,10 +125,15 @@ def _select_voice_sample_segments(
                 "score": score,
                 "text": segment.text,
                 "strategy": "transcript-ranked",
+                "embedding": acoustic_features["embedding"],
+                "speech_ratio": acoustic_features["speech_ratio"],
+                "flatness": acoustic_features["flatness"],
+                "centroid_hz": acoustic_features["centroid_hz"],
             }
         )
 
-    candidates.sort(key=lambda item: item["score"], reverse=True)
+    candidates = _filter_to_dominant_speaker_candidates(candidates)
+    candidates.sort(key=lambda item: (item["score"], item["speech_ratio"]), reverse=True)
     selected: list[dict[str, Any]] = []
     accumulated_duration_ms = 0
     for candidate in candidates:
@@ -135,7 +142,7 @@ def _select_voice_sample_segments(
         segment_duration_ms = candidate["end_ms"] - candidate["start_ms"]
         if segment_duration_ms <= 0:
             continue
-        selected.append(candidate)
+        selected.append({key: value for key, value in candidate.items() if key != "embedding"})
         accumulated_duration_ms += segment_duration_ms
 
     if not selected:
@@ -148,23 +155,97 @@ def _select_voice_sample_segments(
                 "strategy": "fallback-first-window",
             }
         ]
+    selected.sort(key=lambda item: item["start_ms"])
     return selected
 
 
-def _score_voice_sample_clip(clip: AudioSegment, text: str) -> float:
+def _score_voice_sample_clip(clip: AudioSegment, text: str, acoustic_features: dict[str, Any]) -> float:
     """Compute a heuristic score for how suitable a clip is as a voice reference."""
     clip_length_ms = max(len(clip), 1)
-    silence_threshold = _voice_sample_silence_threshold(clip)
-    speech_ranges = silence.detect_nonsilent(clip, min_silence_len=250, silence_thresh=silence_threshold)
-    speech_duration_ms = sum(end - start for start, end in speech_ranges)
-    speech_ratio = speech_duration_ms / clip_length_ms
+    speech_ratio = acoustic_features["speech_ratio"]
     word_count = len(text.split())
     loudness = clip.dBFS if isfinite(clip.dBFS) else -60.0
     loudness_score = max(0.0, 1.0 - abs(loudness + 18.0) / 18.0)
     duration_score = min(clip_length_ms / 6000.0, 1.0)
     word_score = min(word_count / 12.0, 1.0)
     clipping_penalty = 0.4 if clip.max_dBFS > -0.5 else 0.0
-    return (speech_ratio * 3.0) + loudness_score + duration_score + word_score - clipping_penalty
+    spectral_focus_score = max(0.0, 1.0 - min(acoustic_features["flatness"], 1.0))
+    centroid_score = 1.0 if 120.0 <= acoustic_features["centroid_hz"] <= 4_000.0 else 0.5
+    return (speech_ratio * 3.0) + loudness_score + duration_score + word_score + spectral_focus_score + centroid_score - clipping_penalty
+
+
+def _filter_to_dominant_speaker_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only candidates that are acoustically consistent with the dominant speaker cluster."""
+    if len(candidates) <= 1:
+        return candidates
+
+    similarity_threshold = 0.82
+    best_anchor_index = 0
+    best_cluster_score = float("-inf")
+    for index, candidate in enumerate(candidates):
+        cluster_members = [other for other in candidates if _cosine_similarity(candidate["embedding"], other["embedding"]) >= similarity_threshold]
+        cluster_score = sum(member["score"] for member in cluster_members)
+        if cluster_score > best_cluster_score:
+            best_cluster_score = cluster_score
+            best_anchor_index = index
+
+    anchor_embedding = candidates[best_anchor_index]["embedding"]
+    filtered_candidates = []
+    for candidate in candidates:
+        similarity = _cosine_similarity(anchor_embedding, candidate["embedding"])
+        if similarity >= similarity_threshold:
+            filtered_candidates.append({**candidate, "speaker_similarity": similarity})
+
+    return filtered_candidates or candidates
+
+
+def _extract_clip_features(clip: AudioSegment) -> dict[str, Any]:
+    """Extract lightweight acoustic features for speaker consistency ranking."""
+    import librosa
+
+    samples = np.array(clip.get_array_of_samples(), dtype=np.float32)
+    if clip.channels > 1:
+        samples = samples.reshape((-1, clip.channels)).mean(axis=1)
+    sample_width_scale = float(1 << (8 * clip.sample_width - 1))
+    if sample_width_scale > 0:
+        samples = samples / sample_width_scale
+
+    if samples.size == 0:
+        embedding = np.zeros(26, dtype=np.float32)
+        return {"embedding": embedding, "speech_ratio": 0.0, "flatness": 1.0, "centroid_hz": 0.0}
+
+    silence_threshold = _voice_sample_silence_threshold(clip)
+    speech_ranges = silence.detect_nonsilent(clip, min_silence_len=250, silence_thresh=silence_threshold)
+    speech_duration_ms = sum(end - start for start, end in speech_ranges)
+    speech_ratio = speech_duration_ms / max(len(clip), 1)
+
+    sample_rate = clip.frame_rate
+    mfcc = librosa.feature.mfcc(y=samples, sr=sample_rate, n_mfcc=13)
+    mfcc_delta = librosa.feature.delta(mfcc)
+    spectral_centroid = librosa.feature.spectral_centroid(y=samples, sr=sample_rate)
+    spectral_flatness = librosa.feature.spectral_flatness(y=np.maximum(np.abs(samples), 1e-6))
+
+    embedding = np.concatenate(
+        [
+            mfcc.mean(axis=1),
+            mfcc_delta.mean(axis=1),
+        ]
+    ).astype(np.float32)
+    return {
+        "embedding": embedding,
+        "speech_ratio": float(speech_ratio),
+        "flatness": float(np.mean(spectral_flatness)),
+        "centroid_hz": float(np.mean(spectral_centroid)),
+    }
+
+
+def _cosine_similarity(left: np.ndarray, right: np.ndarray) -> float:
+    """Compute cosine similarity between two embeddings."""
+    left_norm = float(np.linalg.norm(left))
+    right_norm = float(np.linalg.norm(right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return float(np.dot(left, right) / (left_norm * right_norm))
 
 
 def _cleanup_voice_sample_clip(clip: AudioSegment) -> AudioSegment:
@@ -208,6 +289,7 @@ def fit_audio_to_duration(source_audio: Path, output_audio: Path, target_duratio
         target_duration=target_duration,
         min_tempo_factor=0.5,
         max_tempo_factor=100.0,
+        allow_overflow=False,
     )
 
 
@@ -217,6 +299,7 @@ def normalize_audio_timing(
     target_duration: float,
     min_tempo_factor: float,
     max_tempo_factor: float,
+    allow_overflow: bool = True,
 ) -> Path:
     """Adjust clip pacing within bounded tempo limits, then pad short clips without truncating speech."""
     if target_duration <= 0:
@@ -253,11 +336,64 @@ def normalize_audio_timing(
 
     clip = AudioSegment.from_file(tempo_adjusted_audio)
     target_duration_ms = int(target_duration * 1000)
+    if not allow_overflow and len(clip) > target_duration_ms:
+        overflow_ratio = len(clip) / target_duration_ms
+        overflow_adjusted_audio = output_audio.with_name(f"{output_audio.stem}_cap{output_audio.suffix}")
+        capped_stream = ffmpeg.input(str(tempo_adjusted_audio)).audio
+        for factor in _build_atempo_factors(overflow_ratio):
+            capped_stream = capped_stream.filter("atempo", factor)
+        (
+            capped_stream.output(str(overflow_adjusted_audio), ac=1, ar=24_000)
+            .overwrite_output()
+            .run(quiet=True)
+        )
+        clip = AudioSegment.from_file(overflow_adjusted_audio)
+        overflow_adjusted_audio.unlink(missing_ok=True)
+
     if len(clip) < target_duration_ms:
         clip += AudioSegment.silent(duration=target_duration_ms - len(clip))
+    elif not allow_overflow and len(clip) > target_duration_ms:
+        clip = clip[:target_duration_ms]
     clip.export(output_audio, format="wav")
     tempo_adjusted_audio.unlink(missing_ok=True)
     return output_audio
+
+
+def condense_speech_pauses(
+    source_audio: Path,
+    output_audio: Path,
+    keep_silence_ms: int = 90,
+    min_silence_len: int = 220,
+) -> Path:
+    """Condense long silent pauses in a synthesized clip while preserving speech order."""
+    output_audio.parent.mkdir(parents=True, exist_ok=True)
+    clip = AudioSegment.from_file(source_audio)
+    silence_threshold = _voice_sample_silence_threshold(clip)
+    non_silent_ranges = silence.detect_nonsilent(clip, min_silence_len=min_silence_len, silence_thresh=silence_threshold)
+    if not non_silent_ranges:
+        clip.export(output_audio, format="wav")
+        return output_audio
+
+    condensed_clip = AudioSegment.empty()
+    for index, (start_ms, end_ms) in enumerate(non_silent_ranges):
+        if index > 0:
+            condensed_clip += AudioSegment.silent(duration=keep_silence_ms)
+        condensed_clip += clip[start_ms:end_ms]
+    condensed_clip.export(output_audio, format="wav")
+    return output_audio
+
+
+def _build_atempo_factors(ratio: float) -> list[float]:
+    """Split an atempo ratio into ffmpeg-compatible factors."""
+    factors: list[float] = []
+    while ratio > 2.0:
+        factors.append(2.0)
+        ratio /= 2.0
+    while ratio < 0.5:
+        factors.append(0.5)
+        ratio /= 0.5
+    factors.append(ratio)
+    return factors
 
 
 def overlay_segments(segments: list[tuple[Path, float]], output_audio: Path, duration_seconds: float) -> Path:

@@ -53,8 +53,10 @@ class DubbingConfig(BaseModel):
     temp_dir_name: str = Field(default=".dubb_tmp")
     merge_gap_threshold: float = Field(default=0.35)
     max_chunk_duration: float = Field(default=12.0)
+    chunk_overlap_padding: float = Field(default=1.0)
     min_tempo_factor: float = Field(default=0.9)
     max_tempo_factor: float = Field(default=1.15)
+    forced_max_tempo_factor: float = Field(default=2.2)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

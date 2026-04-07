@@ -150,7 +150,7 @@ When a translated chunk still needs more time after bounded tempo normalization,
 - The full dependency stack is currently supported on Python 3.10 and 3.11, not Python 3.12.
 - Locale aliases such as `en-us` are normalized for both translation and XTTS synthesis. For English dubbing, the pipeline also applies a light American spelling normalization pass.
 - XTTS currently needs an older `transformers` 4.x release; this project pins `transformers` to the 4.41 line because newer 4.x and 5.x releases break Coqui TTS 0.22.0 imports.
-- XTTS voice cloning quality depends strongly on the cleanliness of the reference sample. The pipeline now builds a cleaned reference from the best transcript-ranked speech regions instead of taking the first window of the video audio.
+- XTTS voice cloning quality depends strongly on the cleanliness and speaker consistency of the reference sample. The pipeline now automatically ranks transcript regions with acoustic features, filters them to the dominant speaker cluster, and builds a cleaned multi-clip reference instead of taking the first window of the video audio.
 - Alignment is segment-based; if you need word-level forced alignment, extend the transcription stage with WhisperX or another aligner.
 
 ## Development

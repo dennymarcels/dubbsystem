@@ -251,7 +251,7 @@ class DubbingPipeline:
         work_dir: Path,
     ) -> list[tuple[Path, float]]:
         """Synthesize and duration-fit merged translated chunks."""
-        from dubb.media import normalize_audio_timing
+        from dubb.media import condense_speech_pauses, normalize_audio_timing
 
         aligned_segments: list[tuple[Path, float]] = []
         manifest_entries: list[dict[str, Any]] = []
@@ -259,7 +259,9 @@ class DubbingPipeline:
             if not chunk.translated_text.strip():
                 logger.warning("Skipping empty synthesis chunk at index %s", index)
                 continue
+            next_chunk = chunks[index + 1] if index + 1 < len(chunks) else None
             raw_segment_path = work_dir / "segments" / f"segment_{index:04d}_raw.wav"
+            condensed_segment_path = work_dir / "segments" / f"segment_{index:04d}_condensed.wav"
             aligned_segment_path = work_dir / "segments" / f"segment_{index:04d}.wav"
             logger.info(
                 "Synthesizing chunk %s/%s at %.2fs for %.2fs",
@@ -274,12 +276,30 @@ class DubbingPipeline:
                 language=self._config.target_language,
                 output_path=raw_segment_path,
             )
+            raw_duration = float(ffmpeg.probe(str(raw_segment_path))["format"]["duration"])
+            available_window = None
+            timing_strategy = "preserve-overflow"
+            normalize_source = raw_segment_path
+            allow_overflow = True
+            max_tempo_factor = self._config.max_tempo_factor
+            target_duration = max(chunk.duration, 0.25)
+
+            if next_chunk is not None:
+                available_window = max(0.25, next_chunk.start - chunk.start - self._config.chunk_overlap_padding)
+                if raw_duration > available_window:
+                    timing_strategy = "fit-to-gap"
+                    normalize_source = condense_speech_pauses(raw_segment_path, condensed_segment_path)
+                    allow_overflow = False
+                    max_tempo_factor = self._config.forced_max_tempo_factor
+                    target_duration = available_window
+
             normalize_audio_timing(
-                source_audio=raw_segment_path,
+                source_audio=normalize_source,
                 output_audio=aligned_segment_path,
-                target_duration=max(chunk.duration, 0.25),
+                target_duration=target_duration,
                 min_tempo_factor=self._config.min_tempo_factor,
-                max_tempo_factor=self._config.max_tempo_factor,
+                max_tempo_factor=max_tempo_factor,
+                allow_overflow=allow_overflow,
             )
             aligned_duration = float(ffmpeg.probe(str(aligned_segment_path))["format"]["duration"])
             aligned_segments.append((aligned_segment_path, chunk.start))
@@ -289,10 +309,14 @@ class DubbingPipeline:
                     "start": chunk.start,
                     "end": chunk.end,
                     "target_duration": chunk.duration,
+                    "slot_duration": target_duration,
                     "actual_duration": aligned_duration,
                     "overflow_duration": max(0.0, aligned_duration - chunk.duration),
+                    "available_window": available_window,
+                    "timing_strategy": timing_strategy,
                     "translated_text": chunk.translated_text,
                     "raw_audio": str(raw_segment_path),
+                    "condensed_audio": str(condensed_segment_path) if condensed_segment_path.exists() else None,
                     "aligned_audio": str(aligned_segment_path),
                 }
             )
