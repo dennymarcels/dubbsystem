@@ -43,6 +43,38 @@ class DubbingPipeline:
         logger.info("Using working directory: %s", work_dir)
         return work_dir
 
+    def source_audio_path(self) -> Path:
+        """Return the extracted source audio artifact path."""
+        return self._config.temp_dir / "source.wav"
+
+    def speaker_sample_path(self) -> Path:
+        """Return the speaker sample artifact path."""
+        return self._config.temp_dir / "speaker_sample.wav"
+
+    def transcript_source_path(self) -> Path:
+        """Return the raw transcript artifact path."""
+        return self._config.temp_dir / "transcript.source.json"
+
+    def transcript_translated_path(self) -> Path:
+        """Return the translated transcript artifact path."""
+        return self._config.temp_dir / "transcript.translated.json"
+
+    def transcript_compatibility_path(self) -> Path:
+        """Return the compatibility transcript artifact path."""
+        return self._config.temp_dir / "transcript.json"
+
+    def synthesis_chunks_path(self) -> Path:
+        """Return the synthesis chunk artifact path."""
+        return self._config.temp_dir / "synthesis_chunks.json"
+
+    def synthesis_manifest_path(self) -> Path:
+        """Return the synthesis manifest artifact path."""
+        return self._config.temp_dir / "synthesis_manifest.json"
+
+    def dubbed_audio_path(self) -> Path:
+        """Return the final dubbed audio artifact path."""
+        return self._config.temp_dir / "dubbed_track.wav"
+
     def extract_source_audio(self) -> Path:
         """Extract the source audio track and persist it for inspection."""
         from dubb.media import extract_audio
@@ -92,7 +124,7 @@ class DubbingPipeline:
             "source_language": transcript.source_language,
             "segments": self._serialize_segments(transcript.segments),
         }
-        transcript_artifact = self._write_json_artifact(work_dir / "transcript.source.json", transcript_payload)
+        transcript_artifact = self._write_json_artifact(self.transcript_source_path(), transcript_payload)
         logger.info("Raw transcript artifact written to %s", transcript_artifact)
         return transcript
 
@@ -118,8 +150,8 @@ class DubbingPipeline:
             "target_language": self._config.target_language,
             "segments": self._serialize_segments(translated_segments),
         }
-        translated_artifact = self._write_json_artifact(work_dir / "transcript.translated.json", translated_payload)
-        compatibility_artifact = self._write_transcript_artifacts(translated_segments, work_dir / "transcript.json")
+        translated_artifact = self._write_json_artifact(self.transcript_translated_path(), translated_payload)
+        compatibility_artifact = self._write_transcript_artifacts(translated_segments, self.transcript_compatibility_path())
         logger.info("Translated transcript artifact written to %s", translated_artifact)
         logger.info("Compatibility transcript artifact written to %s", compatibility_artifact)
         return translated_segments
@@ -130,7 +162,7 @@ class DubbingPipeline:
         synthesis_chunks = self._build_synthesis_chunks(translated_segments)
         logger.info("Merged %s transcript segments into %s synthesis chunks", len(translated_segments), len(synthesis_chunks))
         chunks_artifact = self._write_json_artifact(
-            work_dir / "synthesis_chunks.json",
+            self.synthesis_chunks_path(),
             [
                 {
                     "start": chunk.start,
@@ -164,7 +196,7 @@ class DubbingPipeline:
         logger.info("Compositing dubbed audio track for %.2f seconds of video", video_duration)
         dubbed_audio = overlay_segments(
             segments=segments,
-            output_audio=work_dir / "dubbed_track.wav",
+            output_audio=self.dubbed_audio_path(),
             duration_seconds=video_duration,
         )
         logger.info("Dubbed audio track written to %s", dubbed_audio)
@@ -240,9 +272,53 @@ class DubbingPipeline:
                     "aligned_audio": str(aligned_segment_path),
                 }
             )
-        manifest_path = self._write_json_artifact(work_dir / "synthesis_manifest.json", manifest_entries)
+        manifest_path = self._write_json_artifact(self.synthesis_manifest_path(), manifest_entries)
         logger.info("Synthesis manifest written to %s", manifest_path)
         return aligned_segments
+
+    def load_source_transcript(self) -> tuple[list[Segment], str]:
+        """Load the persisted raw transcript artifact."""
+        payload = self._read_json_artifact(self.transcript_source_path())
+        segments = [
+            Segment(
+                start=item["start"],
+                end=item["end"],
+                text=item["text"],
+                translated_text=item.get("translated_text"),
+            )
+            for item in payload["segments"]
+        ]
+        return segments, payload.get("source_language", "auto")
+
+    def load_translated_segments(self) -> list[Segment]:
+        """Load the persisted translated transcript artifact."""
+        payload = self._read_json_artifact(self.transcript_translated_path())
+        return [
+            Segment(
+                start=item["start"],
+                end=item["end"],
+                text=item["text"],
+                translated_text=item.get("translated_text"),
+            )
+            for item in payload["segments"]
+        ]
+
+    def load_synthesis_chunks(self) -> list[SynthesisChunk]:
+        """Load the persisted synthesis chunk artifact."""
+        payload = self._read_json_artifact(self.synthesis_chunks_path())
+        return [
+            SynthesisChunk(
+                start=item["start"],
+                end=item["end"],
+                translated_text=item["translated_text"],
+            )
+            for item in payload
+        ]
+
+    def load_synthesized_segments(self) -> list[tuple[Path, float]]:
+        """Load the persisted synthesis manifest into overlay-ready segment references."""
+        payload = self._read_json_artifact(self.synthesis_manifest_path())
+        return [(Path(item["aligned_audio"]), float(item["start"])) for item in payload]
 
     def _build_synthesis_chunks(self, segments: list[Segment]) -> list[SynthesisChunk]:
         """Merge nearby translated segments into larger chunks with smoother pacing."""
@@ -320,3 +396,9 @@ class DubbingPipeline:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         return output_path
+
+    def _read_json_artifact(self, input_path: Path) -> Any:
+        """Read a JSON artifact from disk."""
+        if not input_path.exists():
+            raise FileNotFoundError(f"Artifact not found: {input_path}")
+        return json.loads(input_path.read_text(encoding="utf-8"))

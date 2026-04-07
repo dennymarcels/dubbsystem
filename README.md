@@ -91,6 +91,19 @@ Verbose pipeline logging:
 dubb /path/to/input.mp4 --log-level INFO
 ```
 
+Step-by-step execution is also available from the CLI. Each command writes artifacts into `.dubb_tmp/<video-stem>/` for inspection:
+
+```bash
+dubb extract-audio /path/to/input.mp4 /path/to/output.mp4
+dubb create-speaker-sample /path/to/input.mp4 /path/to/output.mp4
+dubb transcribe /path/to/input.mp4 /path/to/output.mp4
+dubb translate /path/to/input.mp4 /path/to/output.mp4
+dubb prepare-synthesis-chunks /path/to/input.mp4 /path/to/output.mp4
+dubb synthesize /path/to/input.mp4 /path/to/output.mp4
+dubb compose-audio /path/to/input.mp4 /path/to/output.mp4
+dubb mux-video /path/to/input.mp4 /path/to/output.mp4
+```
+
 Important progress messages include input validation, audio extraction, speaker sample creation, transcription segment count, detected source language, translation, per-segment synthesis, muxing, output path, and cleanup status.
 
 ## Colab Notebook
