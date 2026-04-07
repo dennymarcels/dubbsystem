@@ -97,6 +97,8 @@ Important progress messages include input validation, audio extraction, speaker 
 
 A Colab-ready notebook is included at `notebooks/colab_dubb_demo.ipynb`. It installs FFmpeg, creates a Python 3.11 `.venv` when needed, clones the repository, installs the package, lets you upload an MP4, runs the `dubb` CLI from that environment, and previews the dubbed result.
 
+The notebook also includes a staged workflow where each pipeline phase runs separately and leaves behind inspectable files.
+
 ## Pipeline
 
 1. Extract source audio as mono 24 kHz WAV.
@@ -109,6 +111,18 @@ A Colab-ready notebook is included at `notebooks/colab_dubb_demo.ipynb`. It inst
 8. Replace the source audio in the video and export MP4.
 
 Intermediate timestamped transcript data is written to `.dubb_tmp/<video-stem>/transcript.json` while the pipeline runs.
+
+The step-by-step workflow writes these additional artifacts into `.dubb_tmp/<video-stem>/`:
+
+- `source.wav`
+- `speaker_sample.wav`
+- `transcript.source.json`
+- `transcript.translated.json`
+- `synthesis_chunks.json`
+- `synthesis_manifest.json`
+- `segments/segment_*_raw.wav`
+- `segments/segment_*.wav`
+- `dubbed_track.wav`
 
 ## Notes
 

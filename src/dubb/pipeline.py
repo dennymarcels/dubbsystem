@@ -6,6 +6,9 @@ import json
 import logging
 import shutil
 from pathlib import Path
+from typing import Any
+
+import ffmpeg
 
 from dubb.schemas import DubbingConfig, Segment, SynthesisChunk
 
@@ -21,20 +24,30 @@ class DubbingPipeline:
 
     def run(self) -> Path:
         """Execute the dubbing pipeline and return the output video path."""
+        self.prepare_workspace()
+        source_audio = self.extract_source_audio()
+        speaker_sample = self.create_speaker_sample(source_audio)
+        transcript = self.transcribe_source_audio(source_audio)
+        translated_segments = self.translate_segments(transcript.segments, transcript.source_language)
+        synthesis_chunks = self.prepare_synthesis_chunks(translated_segments)
+        synthesized_segments = self.synthesize_chunks(synthesis_chunks, speaker_sample)
+        dubbed_audio = self.compose_dubbed_audio(synthesized_segments)
+        return self.mux_dubbed_video(dubbed_audio)
+
+    def prepare_workspace(self) -> Path:
+        """Validate inputs and create the working directory for inspectable artifacts."""
         self._validate_inputs()
         logger.info("Validated input video: %s", self._config.input_path)
-
-        import ffmpeg
-
-        from dubb.media import create_voice_sample, extract_audio, fit_audio_to_duration, mux_audio_with_video, overlay_segments
-        from dubb.synthesis import VoiceCloner
-        from dubb.transcription import transcribe_with_timestamps
-        from dubb.translation import Translator
-
         work_dir = self._config.temp_dir
         work_dir.mkdir(parents=True, exist_ok=True)
         logger.info("Using working directory: %s", work_dir)
+        return work_dir
 
+    def extract_source_audio(self) -> Path:
+        """Extract the source audio track and persist it for inspection."""
+        from dubb.media import extract_audio
+
+        work_dir = self.prepare_workspace()
         logger.info("Extracting source audio at %s Hz", self._config.sample_rate)
         source_audio = extract_audio(
             input_video=self._config.input_path,
@@ -42,7 +55,13 @@ class DubbingPipeline:
             sample_rate=self._config.sample_rate,
         )
         logger.info("Source audio extracted to %s", source_audio)
+        return source_audio
 
+    def create_speaker_sample(self, source_audio: Path) -> Path:
+        """Create and persist the speaker reference sample used for cloning."""
+        from dubb.media import create_voice_sample
+
+        work_dir = self.prepare_workspace()
         logger.info("Creating speaker reference sample (%s seconds)", self._config.voice_sample_seconds)
         speaker_sample = create_voice_sample(
             source_audio=source_audio,
@@ -50,7 +69,13 @@ class DubbingPipeline:
             duration_seconds=self._config.voice_sample_seconds,
         )
         logger.info("Speaker reference sample saved to %s", speaker_sample)
+        return speaker_sample
 
+    def transcribe_source_audio(self, source_audio: Path) -> Any:
+        """Transcribe the source audio and persist raw transcript artifacts."""
+        from dubb.transcription import transcribe_with_timestamps
+
+        work_dir = self.prepare_workspace()
         logger.info("Running transcription with Faster Whisper model %s", self._config.transcription_model)
         transcript = transcribe_with_timestamps(
             audio_path=source_audio,
@@ -63,7 +88,19 @@ class DubbingPipeline:
             len(transcript.segments),
             transcript.source_language,
         )
+        transcript_payload = {
+            "source_language": transcript.source_language,
+            "segments": self._serialize_segments(transcript.segments),
+        }
+        transcript_artifact = self._write_json_artifact(work_dir / "transcript.source.json", transcript_payload)
+        logger.info("Raw transcript artifact written to %s", transcript_artifact)
+        return transcript
 
+    def translate_segments(self, segments: list[Segment], source_language: str) -> list[Segment]:
+        """Translate transcript segments and persist translated transcript artifacts."""
+        from dubb.translation import Translator
+
+        work_dir = self.prepare_workspace()
         logger.info(
             "Translating transcript into %s with model %s",
             self._config.target_language,
@@ -72,29 +109,70 @@ class DubbingPipeline:
         translator = Translator(
             model_name=self._config.translation_model,
             device=self._config.device,
-            source_language=transcript.source_language,
+            source_language=source_language,
             target_language=self._config.target_language,
         )
-        translated_segments = translator.translate_segments(transcript.segments)
+        translated_segments = translator.translate_segments(segments)
         logger.info("Translation completed for %s segments", len(translated_segments))
-        transcript_artifact = self._write_transcript_artifacts(translated_segments, work_dir / "transcript.json")
-        logger.info("Transcript artifact written to %s", transcript_artifact)
+        translated_payload = {
+            "target_language": self._config.target_language,
+            "segments": self._serialize_segments(translated_segments),
+        }
+        translated_artifact = self._write_json_artifact(work_dir / "transcript.translated.json", translated_payload)
+        compatibility_artifact = self._write_transcript_artifacts(translated_segments, work_dir / "transcript.json")
+        logger.info("Translated transcript artifact written to %s", translated_artifact)
+        logger.info("Compatibility transcript artifact written to %s", compatibility_artifact)
+        return translated_segments
 
-        logger.info("Loading voice cloning model %s", self._config.tts_model)
-        cloner = VoiceCloner(model_name=self._config.tts_model, device=self._config.device)
+    def prepare_synthesis_chunks(self, translated_segments: list[Segment]) -> list[SynthesisChunk]:
+        """Merge translated segments into inspectable synthesis chunks."""
+        work_dir = self.prepare_workspace()
         synthesis_chunks = self._build_synthesis_chunks(translated_segments)
         logger.info("Merged %s transcript segments into %s synthesis chunks", len(translated_segments), len(synthesis_chunks))
-        synthesized_segments = self._synthesize_segments(synthesis_chunks, speaker_sample, cloner, work_dir)
-        logger.info("Synthesized %s aligned speech chunks", len(synthesized_segments))
+        chunks_artifact = self._write_json_artifact(
+            work_dir / "synthesis_chunks.json",
+            [
+                {
+                    "start": chunk.start,
+                    "end": chunk.end,
+                    "duration": chunk.duration,
+                    "translated_text": chunk.translated_text,
+                }
+                for chunk in synthesis_chunks
+            ],
+        )
+        logger.info("Synthesis chunk artifact written to %s", chunks_artifact)
+        return synthesis_chunks
 
+    def synthesize_chunks(self, chunks: list[SynthesisChunk], speaker_sample: Path) -> list[tuple[Path, float]]:
+        """Synthesize chunk audio and persist raw and aligned segment files."""
+        from dubb.synthesis import VoiceCloner
+
+        work_dir = self.prepare_workspace()
+        logger.info("Loading voice cloning model %s", self._config.tts_model)
+        cloner = VoiceCloner(model_name=self._config.tts_model, device=self._config.device)
+        synthesized_segments = self._synthesize_segments(chunks, speaker_sample, cloner, work_dir)
+        logger.info("Synthesized %s aligned speech chunks", len(synthesized_segments))
+        return synthesized_segments
+
+    def compose_dubbed_audio(self, segments: list[tuple[Path, float]]) -> Path:
+        """Overlay aligned chunk audio into a single dubbed track file."""
+        from dubb.media import overlay_segments
+
+        work_dir = self.prepare_workspace()
         video_duration = float(ffmpeg.probe(str(self._config.input_path))["format"]["duration"])
         logger.info("Compositing dubbed audio track for %.2f seconds of video", video_duration)
         dubbed_audio = overlay_segments(
-            segments=synthesized_segments,
+            segments=segments,
             output_audio=work_dir / "dubbed_track.wav",
             duration_seconds=video_duration,
         )
         logger.info("Dubbed audio track written to %s", dubbed_audio)
+        return dubbed_audio
+
+    def mux_dubbed_video(self, dubbed_audio: Path) -> Path:
+        """Mux the dubbed track back into the MP4 container."""
+        from dubb.media import mux_audio_with_video
 
         logger.info("Muxing dubbed audio back into MP4 container")
         output_path = mux_audio_with_video(
@@ -123,6 +201,7 @@ class DubbingPipeline:
         from dubb.media import normalize_audio_timing
 
         aligned_segments: list[tuple[Path, float]] = []
+        manifest_entries: list[dict[str, Any]] = []
         for index, chunk in enumerate(chunks):
             if not chunk.translated_text.strip():
                 logger.warning("Skipping empty synthesis chunk at index %s", index)
@@ -150,6 +229,19 @@ class DubbingPipeline:
                 max_tempo_factor=self._config.max_tempo_factor,
             )
             aligned_segments.append((aligned_segment_path, chunk.start))
+            manifest_entries.append(
+                {
+                    "index": index,
+                    "start": chunk.start,
+                    "end": chunk.end,
+                    "duration": chunk.duration,
+                    "translated_text": chunk.translated_text,
+                    "raw_audio": str(raw_segment_path),
+                    "aligned_audio": str(aligned_segment_path),
+                }
+            )
+        manifest_path = self._write_json_artifact(work_dir / "synthesis_manifest.json", manifest_entries)
+        logger.info("Synthesis manifest written to %s", manifest_path)
         return aligned_segments
 
     def _build_synthesis_chunks(self, segments: list[Segment]) -> list[SynthesisChunk]:
@@ -199,7 +291,6 @@ class DubbingPipeline:
 
     def _write_transcript_artifacts(self, segments: list[Segment], output_path: Path) -> Path:
         """Persist timestamped transcript and translation data for inspection."""
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         payload = [
             {
                 "start": segment.start,
@@ -209,5 +300,23 @@ class DubbingPipeline:
             }
             for segment in segments
         ]
+        return self._write_json_artifact(output_path, payload)
+
+    def _serialize_segments(self, segments: list[Segment]) -> list[dict[str, Any]]:
+        """Convert segment models into JSON-serializable dictionaries."""
+        return [
+            {
+                "start": segment.start,
+                "end": segment.end,
+                "duration": segment.duration,
+                "text": segment.text,
+                "translated_text": segment.translated_text,
+            }
+            for segment in segments
+        ]
+
+    def _write_json_artifact(self, output_path: Path, payload: Any) -> Path:
+        """Write a JSON artifact to disk for later inspection."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         return output_path
