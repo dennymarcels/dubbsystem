@@ -6,11 +6,14 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import ffmpeg
 
 from dubb.schemas import DubbingConfig, Segment, SynthesisChunk
+
+if TYPE_CHECKING:
+    from dubb.synthesis import VoiceCloner
 
 logger = logging.getLogger(__name__)
 
@@ -128,13 +131,15 @@ class DubbingPipeline:
         """Transcribe the source audio and persist raw transcript artifacts."""
         from dubb.transcription import transcribe_with_timestamps
 
-        work_dir = self.prepare_workspace()
+        self.prepare_workspace()
         logger.info("Running transcription with Faster Whisper model %s", self._config.transcription_model)
         transcript = transcribe_with_timestamps(
             audio_path=source_audio,
             model_name=self._config.transcription_model,
             device=self._config.device,
             compute_type=self._config.compute_type,
+            batch_size=self._config.transcription_batch_size,
+            word_timestamps=self._config.word_timestamps,
         )
         logger.info(
             "Transcription completed with %s segments; detected source language: %s",
@@ -153,7 +158,7 @@ class DubbingPipeline:
         """Translate transcript segments and persist translated transcript artifacts."""
         from dubb.translation import Translator
 
-        work_dir = self.prepare_workspace()
+        self.prepare_workspace()
         logger.info(
             "Translating transcript into %s with model %s",
             self._config.target_language,
@@ -179,7 +184,7 @@ class DubbingPipeline:
 
     def prepare_synthesis_chunks(self, translated_segments: list[Segment]) -> list[SynthesisChunk]:
         """Merge translated segments into inspectable synthesis chunks."""
-        work_dir = self.prepare_workspace()
+        self.prepare_workspace()
         synthesis_chunks = self._build_synthesis_chunks(translated_segments)
         logger.info("Merged %s transcript segments into %s synthesis chunks", len(translated_segments), len(synthesis_chunks))
         chunks_artifact = self._write_json_artifact(
@@ -212,7 +217,7 @@ class DubbingPipeline:
         """Overlay aligned chunk audio into a single dubbed track file."""
         from dubb.media import overlay_segments
 
-        work_dir = self.prepare_workspace()
+        self.prepare_workspace()
         video_duration = float(ffmpeg.probe(str(self._config.input_path))["format"]["duration"])
         logger.info("Compositing dubbed audio track for %.2f seconds of video", video_duration)
         dubbed_audio = overlay_segments(
@@ -333,6 +338,7 @@ class DubbingPipeline:
                 end=item["end"],
                 text=item["text"],
                 translated_text=item.get("translated_text"),
+                words=item.get("words"),
             )
             for item in payload["segments"]
         ]
@@ -347,6 +353,7 @@ class DubbingPipeline:
                 end=item["end"],
                 text=item["text"],
                 translated_text=item.get("translated_text"),
+                words=item.get("words"),
             )
             for item in payload["segments"]
         ]
@@ -435,6 +442,7 @@ class DubbingPipeline:
                 "duration": segment.duration,
                 "text": segment.text,
                 "translated_text": segment.translated_text,
+                "words": [word.model_dump() for word in segment.words] if segment.words else None,
             }
             for segment in segments
         ]

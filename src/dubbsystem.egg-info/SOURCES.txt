@@ -16,4 +16,5 @@ src/dubbsystem.egg-info/entry_points.txt
 src/dubbsystem.egg-info/requires.txt
 src/dubbsystem.egg-info/top_level.txt
 tests/test_config.py
+tests/test_media.py
 tests/test_pipeline.py

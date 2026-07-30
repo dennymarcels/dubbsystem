@@ -10,7 +10,8 @@ from setuptools import setup
 if not ((3, 10) <= sys.version_info < (3, 12)):
     raise RuntimeError(
         "DubbSystem requires Python 3.10 or 3.11. "
-        "The Coqui TTS dependency used for XTTS voice cloning does not currently support Python 3.12."
+        "This is currently limited by the pinned transformers<4.42 requirement needed for XTTS v2 "
+        "compatibility, not by the coqui-tts package itself, which now supports newer Python versions."
     )
 
 

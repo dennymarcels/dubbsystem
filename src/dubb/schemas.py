@@ -8,6 +8,15 @@ from typing import Literal
 from pydantic import BaseModel, Field, computed_field
 
 
+class Word(BaseModel):
+    """A single word-level timestamp within a transcribed segment."""
+
+    start: float
+    end: float
+    word: str
+    probability: float = Field(default=1.0)
+
+
 class Segment(BaseModel):
     """A timestamped speech segment."""
 
@@ -15,6 +24,7 @@ class Segment(BaseModel):
     end: float
     text: str
     translated_text: str | None = None
+    words: list[Word] | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -50,6 +60,8 @@ class DubbingConfig(BaseModel):
     compute_type: str = Field(default="float16")
     sample_rate: int = Field(default=24_000)
     voice_sample_seconds: int = Field(default=60)
+    transcription_batch_size: int = Field(default=8, ge=1)
+    word_timestamps: bool = Field(default=True)
     temp_dir_name: str = Field(default=".dubb_tmp")
     merge_gap_threshold: float = Field(default=0.35)
     max_chunk_duration: float = Field(default=12.0)

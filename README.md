@@ -6,9 +6,9 @@ DubbSystem is a Python package for GPU-oriented video dubbing with open source m
 
 - MP4 input and MP4 output.
 - FFmpeg-based audio extraction and video muxing.
-- Timestamped transcription with Faster Whisper.
+- Timestamped transcription with Faster Whisper, using batched inference and word-level timestamps by default.
 - Translation with Hugging Face sequence-to-sequence models.
-- Voice cloning with Coqui XTTS v2.
+- Voice cloning with XTTS v2, served through the actively maintained `coqui-tts` community fork.
 - Segment-level duration fitting to keep the dubbed track chronologically aligned.
 - Installable with `git clone` then `pip install .`.
 - CLI entrypoint through `dubb`.
@@ -149,13 +149,26 @@ When a translated chunk still needs more time after bounded tempo normalization,
 - The default speaker reference sample length is 60 seconds.
 - The full dependency stack is currently supported on Python 3.10 and 3.11, not Python 3.12.
 - Locale aliases such as `en-us` are normalized for both translation and XTTS synthesis. For English dubbing, the pipeline also applies a light American spelling normalization pass.
-- XTTS currently needs an older `transformers` 4.x release; this project pins `transformers` to the 4.41 line because newer 4.x and 5.x releases break Coqui TTS 0.22.0 imports.
+- XTTS currently needs an older `transformers` 4.x release; this project pins `transformers` to the 4.41 line because newer 4.x and 5.x releases break XTTS v2 imports.
 - XTTS voice cloning quality depends strongly on the cleanliness and speaker consistency of the reference sample. The pipeline now automatically ranks transcript regions with acoustic features, filters them to the dominant speaker cluster, and builds a cleaned multi-clip reference instead of taking the first window of the video audio.
-- Alignment is segment-based; if you need word-level forced alignment, extend the transcription stage with WhisperX or another aligner.
+- Transcription now requests word-level timestamps by default (`word_timestamps` config flag) and runs through Faster Whisper's batched inference pipeline (`transcription_batch_size` config value, default `8`) for significantly faster runs on both GPU and CPU. Segment-level chunking still drives synthesis pacing, but word-level timing is persisted in transcript artifacts for future finer-grained alignment work.
+- The original `coqui-ai/TTS` package is unmaintained; this project depends on the actively maintained `coqui-tts` community fork (same `TTS.api.TTS` import path, drop-in compatible).
+
+## Roadmap
+
+Areas identified for further modernization that were not applied automatically because they require larger architectural changes, new heavy dependencies, or GPU-based validation this environment cannot perform:
+
+- **Newer voice cloning models.** XTTS v2 (2024) is no longer state of the art. Actively developed alternatives such as [Chatterbox](https://github.com/resemble-ai/chatterbox) (Resemble AI) or CosyVoice2 report better speaker similarity and fewer hallucinations, but they use a different Python API and would need a new adapter class plus real audio evaluation.
+- **Duration fitting driven by word-level timestamps.** Now that word-level timestamps are captured, the synthesis chunk merge/duration-fit logic in `pipeline.py` and `media.py` could target sub-segment timing instead of whole-segment windows, reducing reliance on tempo stretching.
+- **Direct speech-to-speech translation.** Models like Seamless M4T v2 can translate speech while preserving prosody, potentially replacing the cascaded ASR → MT → TTS pipeline for supported language pairs.
+- **Automated quality regression checks.** Adding a back-translation or ASR round-trip check on synthesized audio would give an objective signal for pipeline regressions in CI.
 
 ## Development
 
 ```bash
 pip install -e .[dev]
 pytest
+ruff check .
 ```
+
+Continuous integration runs `ruff check` and `pytest` on Python 3.10 and 3.11 for every push and pull request (see `.github/workflows/ci.yml`).
